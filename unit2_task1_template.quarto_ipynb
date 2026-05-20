@@ -1,0 +1,246 @@
+{
+  "cells": [
+    {
+      "cell_type": "markdown",
+      "metadata": {},
+      "source": [
+        "---\n",
+        "title: \"Client Report - Flights: Creating New Columns\"\n",
+        "subtitle: \"Unit 2 Task 1\"\n",
+        "author: \"Rachel Anderson\"\n",
+        "format:\n",
+        "  html:\n",
+        "    self-contained: true\n",
+        "    page-layout: full\n",
+        "    title-block-banner: true\n",
+        "    toc: true\n",
+        "    toc-depth: 3\n",
+        "    toc-location: body\n",
+        "    number-sections: false\n",
+        "    html-math-method: katex\n",
+        "    code-fold: true\n",
+        "    code-summary: \"Show the code\"\n",
+        "    code-overflow: wrap\n",
+        "    code-copy: hover\n",
+        "    code-tools:\n",
+        "        source: false\n",
+        "        toggle: true\n",
+        "        caption: See code\n",
+        "execute: \n",
+        "  warning: false\n",
+        "    \n",
+        "---"
+      ],
+      "id": "dbbcbdd1"
+    },
+    {
+      "cell_type": "code",
+      "metadata": {},
+      "source": [
+        "import polars as pl\n",
+        "import requests #new for reading in JSON\n",
+        "import io       #new for reading in JSON\n",
+        "import numpy as np\n",
+        "from lets_plot import *\n",
+        "\n",
+        "LetsPlot.setup_html(isolated_frame=True)"
+      ],
+      "id": "0bd511ed",
+      "execution_count": null,
+      "outputs": []
+    },
+    {
+      "cell_type": "code",
+      "metadata": {},
+      "source": [
+        "# Learn morea about Code Cells: https://quarto.org/docs/reference/cells/cells-jupyter.html\n",
+        "\n",
+        "# Include and execute your code here\n",
+        "url = \"https://raw.githubusercontent.com/byuidatascience/data4missing/master/data-raw/flights_missing/flights_missing.json\"\n",
+        "response = requests.get(url)\n",
+        "df = pl.read_json(io.BytesIO(response.content))"
+      ],
+      "id": "01a715d6",
+      "execution_count": null,
+      "outputs": []
+    },
+    {
+      "cell_type": "markdown",
+      "metadata": {},
+      "source": [
+        "## QUESTION 1\n",
+        "\n",
+        "1. __Create a new 'season' column.__ Define 'season' as:\n",
+        "    1. Winter for January, Febuary (note the mispelling), March\n",
+        "    1. Spring for April, May, June\n",
+        "    1. Summer for  July, August, September\n",
+        "    1. Fall for October, November, December\n",
+        "    1. All other rows can be assigned a value of 'Unknown' \n"
+      ],
+      "id": "9dbacc70"
+    },
+    {
+      "cell_type": "code",
+      "metadata": {},
+      "source": [
+        "df = df.with_columns(\n",
+        "    pl.when(pl.col(\"month\").is_in([\"January\", \"Febuary\", \"March\"]))\n",
+        "      .then(pl.lit(\"Winter\"))\n",
+        "      .when(pl.col(\"month\").is_in([\"April\", \"May\", \"June\"]))\n",
+        "      .then(pl.lit(\"Spring\"))\n",
+        "      .when(pl.col(\"month\").is_in([\"July\", \"August\", \"September\"]))\n",
+        "      .then(pl.lit(\"Summer\"))\n",
+        "      .when(pl.col(\"month\").is_in([\"October\", \"November\", \"December\"]))\n",
+        "      .then(pl.lit(\"Fall\"))\n",
+        "      .otherwise(pl.lit(\"Unknown\"))\n",
+        "      .alias(\"season\")\n",
+        ")"
+      ],
+      "id": "c69800f1",
+      "execution_count": null,
+      "outputs": []
+    },
+    {
+      "cell_type": "markdown",
+      "metadata": {},
+      "source": [
+        "## QUESTION 2\n",
+        "\n",
+        "1. __Divide all the columns by 1000 whose name starts with num_of.__ Be sure to first filter out rows that contain problematic values for the columns like -999 or 1500+.\n"
+      ],
+      "id": "fbb8d3b0"
+    },
+    {
+      "cell_type": "code",
+      "metadata": {},
+      "source": [
+        "num_of_cols = [col for col in df.columns if col.startswith(\"num_of\")]\n",
+        "\n",
+        "# Fix the carrier column: replace \"1500+\" with null, then cast everything to float\n",
+        "df = df.with_columns(\n",
+        "    pl.col(\"num_of_delays_carrier\")\n",
+        "      .str.replace(\"1500\\\\+\", \"\")\n",
+        "      .cast(pl.Float64, strict=False)\n",
+        "      .alias(\"num_of_delays_carrier\")\n",
+        ")\n",
+        "\n",
+        "# Cast all other num_of columns to float\n",
+        "df = df.with_columns(\n",
+        "    [pl.col(c).cast(pl.Float64, strict=False).alias(c) for c in num_of_cols if c != \"num_of_delays_carrier\"]\n",
+        ")\n",
+        "\n",
+        "# Filter out -999 values (replace with null instead of dropping rows)\n",
+        "df = df.with_columns(\n",
+        "    [pl.when(pl.col(c) == -999).then(None).otherwise(pl.col(c)).alias(c) for c in num_of_cols]\n",
+        ")\n",
+        "\n",
+        "# Divide all num_of columns by 1000\n",
+        "df = df.with_columns(\n",
+        "    [(pl.col(c) / 1000).alias(c) for c in num_of_cols]\n",
+        ")\n",
+        "\n",
+        "# Re-add season column\n",
+        "df = df.with_columns(\n",
+        "    pl.when(pl.col(\"month\").is_in([\"January\", \"Febuary\", \"March\"]))\n",
+        "      .then(pl.lit(\"Winter\"))\n",
+        "      .when(pl.col(\"month\").is_in([\"April\", \"May\", \"June\"]))\n",
+        "      .then(pl.lit(\"Spring\"))\n",
+        "      .when(pl.col(\"month\").is_in([\"July\", \"August\", \"September\"]))\n",
+        "      .then(pl.lit(\"Summer\"))\n",
+        "      .when(pl.col(\"month\").is_in([\"October\", \"November\", \"December\"]))\n",
+        "      .then(pl.lit(\"Fall\"))\n",
+        "      .otherwise(pl.lit(\"Unknown\"))\n",
+        "      .alias(\"season\")\n",
+        ")\n",
+        "\n",
+        "print(df.shape)"
+      ],
+      "id": "c74007af",
+      "execution_count": null,
+      "outputs": []
+    },
+    {
+      "cell_type": "markdown",
+      "metadata": {},
+      "source": [
+        "## QUESTION 3\n",
+        "\n",
+        "1. According to the BTS website, the “Weather” category only accounts for severe weather delays. Mild weather delays are not counted in the “Weather” category, but are actually included in both the “nas” and “late_aircraft” categories. __Using the columns you modified in the bullet above, your job is to create a new column that calculates the total number of flights (in 1,000's) delayed by weather (both severe and mild).__ Show your work by printing the first 5 rows of the dataset. Use these three rules for your calculations:  \n",
+        "\n",
+        "    a. 100% of delayed flights in the Weather category are due to weather  \n",
+        "    a. 30% of all delayed flights in the \"late_aircraft\" category are due to weather  \n",
+        "    a. From April through August, 40% of delayed flights in the NAS category are due to weather. The rest of the months, the proportion rises to 65%  \n"
+      ],
+      "id": "fa896843"
+    },
+    {
+      "cell_type": "code",
+      "metadata": {},
+      "source": [
+        "# Calculate the NAS weather proportion based on month (40% Apr-Aug, 65% otherwise)\n",
+        "nas_weather = (\n",
+        "    pl.when(pl.col(\"month\").is_in([\"April\", \"May\", \"June\", \"July\", \"August\"]))\n",
+        "      .then(pl.col(\"num_of_delays_nas\") * 0.40)\n",
+        "      .otherwise(pl.col(\"num_of_delays_nas\") * 0.65)\n",
+        ")\n",
+        "\n",
+        "# Create the total weather delays column\n",
+        "df = df.with_columns(\n",
+        "    (\n",
+        "        pl.col(\"num_of_delays_weather\") * 1.00 +\n",
+        "        pl.col(\"num_of_delays_late_aircraft\") * 0.30 +\n",
+        "        nas_weather\n",
+        "    ).alias(\"weather_total\")\n",
+        ")\n",
+        "\n",
+        "# Print the first 5 rows\n",
+        "print(df.select([\"month\", \"num_of_delays_weather\", \"num_of_delays_late_aircraft\", \"num_of_delays_nas\", \"weather_total\"]).head(5))"
+      ],
+      "id": "38162981",
+      "execution_count": null,
+      "outputs": []
+    },
+    {
+      "cell_type": "markdown",
+      "metadata": {},
+      "source": [
+        "## QUESTION 4\n",
+        "\n",
+        "1. __Using the new weather variable calculated above, create a boxplot showing the distribution of flights delayed by weather for each season. Describe what you learn from this graph.__    \n",
+        "\n",
+        "_Winter has the highest median weather-delayed flights and the most variability, likely due to snowstorms and ice. Fall also shows a notably high spread with several outliers. Spring tends to have the lowest and most consistent delay counts overall_"
+      ],
+      "id": "ffd3f984"
+    },
+    {
+      "cell_type": "code",
+      "metadata": {},
+      "source": [
+        "(\n",
+        "    ggplot(df.drop_nulls(subset=[\"season\", \"weather_total\"]), \n",
+        "           aes(x=\"season\", y=\"weather_total\", fill=\"season\")) +\n",
+        "    geom_boxplot() +\n",
+        "    labs(\n",
+        "        title=\"Distribution of Weather-Delayed Flights by Season\",\n",
+        "        x=\"Season\",\n",
+        "        y=\"Flights Delayed by Weather (in 1,000s)\"\n",
+        "    ) +\n",
+        "    theme_minimal()\n",
+        ")"
+      ],
+      "id": "b7f25af6",
+      "execution_count": null,
+      "outputs": []
+    }
+  ],
+  "metadata": {
+    "kernelspec": {
+      "name": "python3",
+      "language": "python",
+      "display_name": "Python 3 (ipykernel)",
+      "path": "C:\\Users\\racha\\AppData\\Roaming\\Python\\share\\jupyter\\kernels\\python3"
+    }
+  },
+  "nbformat": 4,
+  "nbformat_minor": 5
+}
